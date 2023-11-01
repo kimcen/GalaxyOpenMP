@@ -23,6 +23,7 @@ int read_case(char* filename) {
     printf("Error: %s could not be opened.\n", filename);
     return 1;
   }
+
   n = fscanf(arq, "%d", &N);
   if (n != 1) {
     printf("Error: %s could not be read for number of particles.\n", filename);
@@ -35,8 +36,8 @@ int read_case(char* filename) {
   y = (double*)malloc(N * sizeof(double));
   u = (double*)malloc(N * sizeof(double));
   v = (double*)malloc(N * sizeof(double));
-  force_x = (double*)calloc(N, sizeof(double));
-  force_y = (double*)calloc(N, sizeof(double));
+  force_x = (double*)malloc(N * sizeof(double));
+  force_y = (double*)malloc(N * sizeof(double));
   mass = (double*)malloc(N * sizeof(double));
 
   for (i = 0; i < N; i++) {
@@ -70,11 +71,8 @@ void free_case() {
  * Prints statistics: time, N, final velocity, final center of mass
  */
 void print_statistics(clock_t s, clock_t e, float ut, float vt, float xc, float xy) {
-  #ifdef DEBUG
-  printf("%f\n", (double)(e - s) / CLOCKS_PER_SEC);
+  printf("Time elapsed in seconds: %f\n", (double)(e - s) / CLOCKS_PER_SEC);
   printf("%d\n", N);
-  printf("%d\n", time_steps);
-  #endif
   printf("%.5f %.5f\n", ut, vt);
   printf("%.5f %.5f\n", xc, xy);
 }
@@ -157,27 +155,40 @@ void put_particle_in_tree(int new_particle, struct node_t* node) {
   if (!node->has_particle) {
     node->particle = new_particle;
     node->has_particle = 1;
+    return;
   }
+
   //If the node has no children
-  else if (!node->has_children) {
+  if (!node->has_children) {
     //Allocate and initiate children
     node->children = malloc(4 * sizeof(struct node_t));
     for (int i = 0; i < 4; i++) {
       set_node(&node->children[i]);
     }
 
+    double temp_x = (node->min_x + node->max_x) / 2;
+    double temp_y = (node->min_y + node->max_y) / 2;
+
     //Set boundaries for the children
-    node->children[0].min_x = node->min_x; node->children[0].max_x = (node->min_x + node->max_x) / 2;
-    node->children[0].min_y = node->min_y; node->children[0].max_y = (node->min_y + node->max_y) / 2;
+    node->children[0].min_x = node->min_x;
+    node->children[0].max_x = temp_x;
+    node->children[0].min_y = node->min_y;
+    node->children[0].max_y = temp_y;
 
-    node->children[1].min_x = (node->min_x + node->max_x) / 2; node->children[1].max_x = node->max_x;
-    node->children[1].min_y = node->min_y; node->children[1].max_y = (node->min_y + node->max_y) / 2;
+    node->children[1].min_x = temp_x;
+    node->children[1].max_x = node->max_x;
+    node->children[1].min_y = node->min_y;
+    node->children[1].max_y = temp_y;
 
-    node->children[2].min_x = node->min_x; node->children[2].max_x = (node->min_x + node->max_x) / 2;
-    node->children[2].min_y = (node->min_y + node->max_y) / 2; node->children[2].max_y = node->max_y;
+    node->children[2].min_x = node->min_x;
+    node->children[2].max_x = temp_x;
+    node->children[2].min_y = temp_y;
+    node->children[2].max_y = node->max_y;
 
-    node->children[3].min_x = (node->min_x + node->max_x) / 2; node->children[3].max_x = node->max_x;
-    node->children[3].min_y = (node->min_y + node->max_y) / 2; node->children[3].max_y = node->max_y;
+    node->children[3].min_x = temp_x;
+    node->children[3].max_x = node->max_x;
+    node->children[3].min_y = temp_y;
+    node->children[3].max_y = node->max_y;
 
     //Put old particle into the appropriate child
     place_particle(node->particle, node);
@@ -187,12 +198,12 @@ void put_particle_in_tree(int new_particle, struct node_t* node) {
 
     //It now has children
     node->has_children = 1;
+    return;
   }
+
   //Add the new particle to the appropriate children
-  else {
-    //Put new particle into the appropriate child
-    place_particle(new_particle, node);
-  }
+  //Put new particle into the appropriate child
+  place_particle(new_particle, node);
 }
 
 
@@ -200,31 +211,38 @@ void put_particle_in_tree(int new_particle, struct node_t* node) {
  * Puts a particle in the right child of a node with children.
  */
 void place_particle(int particle, struct node_t* node) {
-  if (x[particle] <= (node->min_x + node->max_x) / 2 && y[particle] <= (node->min_y + node->max_y) / 2) {
+  double temp_x = (node->min_x + node->max_x) / 2;
+  double temp_y = (node->min_y + node->max_y) / 2;
+
+  if (x[particle] <= temp_x && y[particle] <= temp_y) {
     put_particle_in_tree(particle, &node->children[0]);
+    return;
   }
-  else if (x[particle] > (node->min_x + node->max_x) / 2 && y[particle] < (node->min_y + node->max_y) / 2) {
+
+  if (x[particle] > temp_x && y[particle] < temp_y) {
     put_particle_in_tree(particle, &node->children[1]);
+    return;
   }
-  else if (x[particle] < (node->min_x + node->max_x) / 2 && y[particle] > (node->min_y + node->max_y) / 2) {
+
+  if (x[particle] < temp_x && y[particle] > temp_y) {
     put_particle_in_tree(particle, &node->children[2]);
+    return;
   }
-  else {
-    put_particle_in_tree(particle, &node->children[3]);
-  }
+
+  put_particle_in_tree(particle, &node->children[3]);
 }
 
 /*
- * Sets initial values for a new node
- */
+  Sets initial values for a new node
+*/
 void set_node(struct node_t* node) {
   node->has_particle = 0;
   node->has_children = 0;
 }
 
 /*
- * Frees memory for a node and its children recursively.
- */
+  Frees memory for a node and its children recursively.
+*/
 void free_node(struct node_t* node) {
   if (node->has_children) {
     free_node(&node->children[0]);
@@ -236,9 +254,9 @@ void free_node(struct node_t* node) {
 }
 
 /*
- * Calculates the total mass for the node. It recursively updates the mass
- * of itself and all of its children.
- */
+  Calculates the total mass for the node. It recursively updates the mass
+  of itself and all of its children.
+*/
 double calculate_mass(struct node_t* node) {
   if (!node->has_particle) {
     node->total_mass = 0;
@@ -256,10 +274,10 @@ double calculate_mass(struct node_t* node) {
 }
 
 /*
- * Calculates the x-position of the centre of mass for the
- * node. It recursively updates the position of itself and
- * all of its children.
- */
+  Calculates the x-position of the centre of mass for the
+  node. It recursively updates the position of itself and
+  all of its children.
+*/
 double calculate_center_of_mass_x(struct node_t* node) {
   if (!node->has_children) {
     node->c_x = x[node->particle];
@@ -279,10 +297,10 @@ double calculate_center_of_mass_x(struct node_t* node) {
 }
 
 /*
- * Calculates the y-position of the centre of mass for the
- * node. It recursively updates the position of itself and
- * all of its children.
- */
+  Calculates the y-position of the centre of mass for the
+  node. It recursively updates the position of itself and
+  all of its children.
+*/
 double calculate_center_of_mass_y(struct node_t* node) {
   if (!node->has_children) {
     node->c_y = y[node->particle];
@@ -302,9 +320,9 @@ double calculate_center_of_mass_y(struct node_t* node) {
 }
 
 /*
- * Calculates the forces in a time step of all particles in
- * the simulation using the Barnes Hut quad tree.
- */
+  Calculates the forces in a time step of all particles in
+  the simulation using the Barnes Hut quad tree.
+*/
 void update_forces() {
   for (int i = 0; i < N; i++) {
     force_x[i] = 0;
@@ -314,9 +332,9 @@ void update_forces() {
 }
 
 /*
- * Help function for calculating the forces recursively
- * using the Barnes Hut quad tree.
- */
+  Help function for calculating the forces recursively
+  using the Barnes Hut quad tree.
+*/
 void update_forces_help(int particle, struct node_t* node) {
   //The node is a leaf node with a particle and not the particle itself
   if (!node->has_children && node->has_particle && node->particle != particle) {
@@ -345,23 +363,19 @@ void update_forces_help(int particle, struct node_t* node) {
 }
 
 /*
- * Calculates and updates the force of a particle from a node.
- */
+  Calculates and updates the force of a particle from a node.
+*/
 void calculate_force(int particle, struct node_t* node, double r) {
   double temp = -grav * mass[particle] * node->total_mass / ((r + epsilon) * (r + epsilon) * (r + epsilon));
   force_x[particle] += (x[particle] - node->c_x) * temp;
   force_y[particle] += (y[particle] - node->c_y) * temp;
 }
 
-/*
- * Main function.
- */
 int main(int argc, char* argv[]) {
-  //The second argument sets the number of time steps
+  // The second argument sets the number of time steps
   int time_steps = atoi(argv[1]);
 
-  int test = read_case(file);
-  if (test == 1) {
+  if (read_case(file) == 1) {
     printf("Error: case instantiation failed.\n");
     return 1;
   }
@@ -383,6 +397,7 @@ int main(int argc, char* argv[]) {
   double sumx = 0;
   double sumy = 0;
   double total_mass = 0;
+
   for (int i = 0; i < N; i++) {
     sumx += mass[i] * x[i];
     sumy += mass[i] * y[i];
@@ -390,6 +405,7 @@ int main(int argc, char* argv[]) {
     vv += v[i];
     total_mass += mass[i];
   }
+
   double cx = sumx / total_mass;
   double cy = sumy / total_mass;
 
