@@ -5,33 +5,20 @@
 #include "barnes_hut.h"
 
  //Some constants and global variables
-int N = 2500;
+int N = 100000;
 const double L = 1, W = 1, dt = 1e-3, alpha = 0.25, V = 50, epsilon = 1e-1, grav = 0.04; //grav should be 100/N
 double* x, * y, * u, * v, * force_x, * force_y, * mass;
 struct node_t* root;
 char* file = "galaxy.in";
 
 /*
- * Function to read a case
- */
+  * Function to read a case
+*/
 int read_case(char* filename) {
-  int i, n;
-  FILE* arq = NULL;
+  int i;
+  FILE* arq = fopen(filename, "r");
 
-  arq = fopen(filename, "r");
-  if (arq == NULL) {
-    printf("Error: %s could not be opened.\n", filename);
-    return 1;
-  }
-
-  n = fscanf(arq, "%d", &N);
-  if (n != 1) {
-    printf("Error: %s could not be read for number of particles.\n", filename);
-    fclose(arq);
-    return 1;
-  }
-
-  //Initiate memory for the vectors
+  // Initiate memory for the vectors
   x = (double*)malloc(N * sizeof(double));
   y = (double*)malloc(N * sizeof(double));
   u = (double*)malloc(N * sizeof(double));
@@ -41,13 +28,7 @@ int read_case(char* filename) {
   mass = (double*)malloc(N * sizeof(double));
 
   for (i = 0; i < N; i++) {
-    n = fscanf(arq, "%lf %lf %lf %lf %lf", &mass[i], &x[i], &y[i], &u[i], &v[i]);
-
-    if (n != 5) {
-      printf("Error: Some reading won't work at line %d (%d)\n", i + 1, n);
-      fclose(arq);
-      return 1;
-    }
+    fscanf(arq, "%lf %lf %lf %lf %lf", &mass[i], &x[i], &y[i], &u[i], &v[i]);
   }
 
   fclose(arq);
@@ -70,8 +51,8 @@ void free_case() {
 /*
  * Prints statistics: time, N, final velocity, final center of mass
  */
-void print_statistics(clock_t s, clock_t e, float ut, float vt, float xc, float xy) {
-  printf("Time elapsed in seconds: %f\n", (double)(e - s) / CLOCKS_PER_SEC);
+void print_statistics(double s, double e, float ut, float vt, float xc, float xy) {
+  printf("Time elapsed in seconds: %f\n", e - s);
   printf("%d\n", N);
   printf("%.5f %.5f\n", ut, vt);
   printf("%.5f %.5f\n", xc, xy);
@@ -83,8 +64,13 @@ void print_statistics(clock_t s, clock_t e, float ut, float vt, float xc, float 
 void time_step(void) {
   //Allocate memory for root
   root = malloc(sizeof(struct node_t));
+
   set_node(root);
-  root->min_x = 0; root->max_x = 1; root->min_y = 0; root->max_y = 1;
+
+  root->min_x = 0;
+  root->max_x = 1;
+  root->min_y = 0;
+  root->max_y = 1;
 
   //Put particles in tree
   for (int i = 0; i < N; i++) {
@@ -100,9 +86,12 @@ void time_step(void) {
   update_forces();
 
   //Update velocities and positions
-  for (int i = 0; i < N; i++) {
-    double ax = force_x[i] / mass[i];
-    double ay = force_y[i] / mass[i];
+  double ax = 0.0, ay = 0.0;
+  int i;
+  #pragma omp parallel for private(i) reduction(+: ax, ay)
+  for (i = 0; i < N; i++) {
+    ax = force_x[i] / mass[i];
+    ay = force_y[i] / mass[i];
     u[i] += ax * dt;
     v[i] += ay * dt;
     x[i] += u[i] * dt;
@@ -125,23 +114,20 @@ void time_step(void) {
  * If a particle moves beyond any of the boundaries then bounce it back
  */
 void bounce(double* x, double* y, double* u, double* v) {
-  double W = 1.0f, H = 1.0f;
-  if (*x > W) {
-    *x = 2 * W - *x;
+  if (*x > 1.0f) {
+    *x = 2 - *x;
     *u = -*u;
   }
-
-  if (*x < 0) {
+  else if (*x < 0) {
     *x = -*x;
     *u = -*u;
   }
 
-  if (*y > H) {
-    *y = 2 * H - *y;
+  if (*y > 1.0f) {
+    *y = 2 - *y;
     *v = -*v;
   }
-
-  if (*y < 0) {
+  else if (*y < 0) {
     *y = -*y;
     *v = -*v;
   }
@@ -162,32 +148,34 @@ void put_particle_in_tree(int new_particle, struct node_t* node) {
   if (!node->has_children) {
     //Allocate and initiate children
     node->children = malloc(4 * sizeof(struct node_t));
-    for (int i = 0; i < 4; i++) {
-      set_node(&node->children[i]);
-    }
 
-    double temp_x = (node->min_x + node->max_x) / 2;
-    double temp_y = (node->min_y + node->max_y) / 2;
+    set_node(&node->children[0]);
+    set_node(&node->children[1]);
+    set_node(&node->children[2]);
+    set_node(&node->children[3]);
+
+    double half_current_x = (node->min_x + node->max_x) / 2;
+    double half_current_y = (node->min_y + node->max_y) / 2;
 
     //Set boundaries for the children
     node->children[0].min_x = node->min_x;
-    node->children[0].max_x = temp_x;
+    node->children[0].max_x = half_current_x;
     node->children[0].min_y = node->min_y;
-    node->children[0].max_y = temp_y;
+    node->children[0].max_y = half_current_y;
 
-    node->children[1].min_x = temp_x;
+    node->children[1].min_x = half_current_x;
     node->children[1].max_x = node->max_x;
     node->children[1].min_y = node->min_y;
-    node->children[1].max_y = temp_y;
+    node->children[1].max_y = half_current_y;
 
     node->children[2].min_x = node->min_x;
-    node->children[2].max_x = temp_x;
-    node->children[2].min_y = temp_y;
+    node->children[2].max_x = half_current_x;
+    node->children[2].min_y = half_current_y;
     node->children[2].max_y = node->max_y;
 
-    node->children[3].min_x = temp_x;
+    node->children[3].min_x = half_current_x;
     node->children[3].max_x = node->max_x;
-    node->children[3].min_y = temp_y;
+    node->children[3].min_y = half_current_y;
     node->children[3].max_y = node->max_y;
 
     //Put old particle into the appropriate child
@@ -211,20 +199,20 @@ void put_particle_in_tree(int new_particle, struct node_t* node) {
  * Puts a particle in the right child of a node with children.
  */
 void place_particle(int particle, struct node_t* node) {
-  double temp_x = (node->min_x + node->max_x) / 2;
-  double temp_y = (node->min_y + node->max_y) / 2;
+  double half_current_x = (node->min_x + node->max_x) / 2;
+  double half_current_y = (node->min_y + node->max_y) / 2;
 
-  if (x[particle] <= temp_x && y[particle] <= temp_y) {
+  if (x[particle] <= half_current_x && y[particle] <= half_current_y) {
     put_particle_in_tree(particle, &node->children[0]);
     return;
   }
 
-  if (x[particle] > temp_x && y[particle] < temp_y) {
+  if (x[particle] > half_current_x && y[particle] < half_current_y) {
     put_particle_in_tree(particle, &node->children[1]);
     return;
   }
 
-  if (x[particle] < temp_x && y[particle] > temp_y) {
+  if (x[particle] < half_current_x && y[particle] > half_current_y) {
     put_particle_in_tree(particle, &node->children[2]);
     return;
   }
@@ -266,10 +254,13 @@ double calculate_mass(struct node_t* node) {
   }
   else {
     node->total_mass = 0;
-    for (int i = 0; i < 4; i++) {
-      node->total_mass += calculate_mass(&node->children[i]);
-    }
+
+    node->total_mass += calculate_mass(&node->children[0]);
+    node->total_mass += calculate_mass(&node->children[1]);
+    node->total_mass += calculate_mass(&node->children[2]);
+    node->total_mass += calculate_mass(&node->children[3]);
   }
+
   return node->total_mass;
 }
 
@@ -324,7 +315,9 @@ double calculate_center_of_mass_y(struct node_t* node) {
   the simulation using the Barnes Hut quad tree.
 */
 void update_forces() {
-  for (int i = 0; i < N; i++) {
+  int i;
+  #pragma omp parallel for private(i)
+  for (i = 0; i < N; i++) {
     force_x[i] = 0;
     force_y[i] = 0;
     update_forces_help(i, root);
@@ -337,28 +330,28 @@ void update_forces() {
 */
 void update_forces_help(int particle, struct node_t* node) {
   //The node is a leaf node with a particle and not the particle itself
-  if (!node->has_children && node->has_particle && node->particle != particle) {
+  if (node->has_children) {
     double r = sqrt((x[particle] - node->c_x) * (x[particle] - node->c_x) + (y[particle] - node->c_y) * (y[particle] - node->c_y));
-    calculate_force(particle, node, r);
-  }
-  //The node has children
-  else if (node->has_children) {
-    //Calculate r and theta
-    double r = sqrt((x[particle] - node->c_x) * (x[particle] - node->c_x) + (y[particle] - node->c_y) * (y[particle] - node->c_y));
-    double theta = (node->max_x - node->min_x) / r;
 
     /* If the distance to the node's centre of mass is far enough, calculate the force,
      * otherwise traverse further down the tree
      */
-    if (theta < 0.5) {
+    if ((node->max_x - node->min_x) / r < 0.5) {
       calculate_force(particle, node, r);
+      return;
     }
-    else {
-      update_forces_help(particle, &node->children[0]);
-      update_forces_help(particle, &node->children[1]);
-      update_forces_help(particle, &node->children[2]);
-      update_forces_help(particle, &node->children[3]);
-    }
+
+    update_forces_help(particle, &node->children[0]);
+    update_forces_help(particle, &node->children[1]);
+    update_forces_help(particle, &node->children[2]);
+    update_forces_help(particle, &node->children[3]);
+  }
+  //The node has children
+  else if (node->has_particle && node->particle != particle) {
+    //Calculate r 
+    double r = sqrt((x[particle] - node->c_x) * (x[particle] - node->c_x) + (y[particle] - node->c_y) * (y[particle] - node->c_y));
+    calculate_force(particle, node, r);
+
   }
 }
 
@@ -366,7 +359,8 @@ void update_forces_help(int particle, struct node_t* node) {
   Calculates and updates the force of a particle from a node.
 */
 void calculate_force(int particle, struct node_t* node, double r) {
-  double temp = -grav * mass[particle] * node->total_mass / ((r + epsilon) * (r + epsilon) * (r + epsilon));
+  double aux = r + epsilon;
+  double temp = -grav * mass[particle] * node->total_mass / (aux * aux * aux);
   force_x[particle] += (x[particle] - node->c_x) * temp;
   force_y[particle] += (y[particle] - node->c_y) * temp;
 }
@@ -381,7 +375,7 @@ int main(int argc, char* argv[]) {
   }
 
   //Begin taking time
-  long start = clock();
+  double start = omp_get_wtime();
 
   //The main loop
   for (int i = 0; i < time_steps; i++) {
@@ -389,7 +383,7 @@ int main(int argc, char* argv[]) {
   }
 
   //Stop taking time
-  long stop = clock();
+  double stop = omp_get_wtime();
 
   //Compute final statistics
   double vu = 0;
@@ -397,8 +391,10 @@ int main(int argc, char* argv[]) {
   double sumx = 0;
   double sumy = 0;
   double total_mass = 0;
+  int i;
 
-  for (int i = 0; i < N; i++) {
+  #pragma omp parallel for private(i) reduction(+:sumx,sumy,vu,vv,total_mass) num_threads(2)
+  for (i = 0; i < N; i++) {
     sumx += mass[i] * x[i];
     sumy += mass[i] * y[i];
     vu += u[i];

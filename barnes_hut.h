@@ -8,16 +8,17 @@
 #include <math.h>
 #include <stdio.h>
 #include <time.h>
+#include <omp.h>
 
  /*
   * Struct that represents a node of the Barnes Hut quad tree.
   */
 struct node_t {
-    int particle;
-    int has_particle;
-    int has_children;
-    double min_x, max_x, min_y, max_y, total_mass, c_x, c_y;
-    struct node_t* children;
+  int particle;
+  int has_particle;
+  int has_children;
+  double min_x, max_x, min_y, max_y, total_mass, c_x, c_y;
+  struct node_t* children;
 };
 
 //Function for producing a random number between two double values.
