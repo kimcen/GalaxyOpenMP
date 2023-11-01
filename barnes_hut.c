@@ -4,10 +4,14 @@
  */
 #include "barnes_hut.h"
 
+#define N 100000
+#define NODE_SIZE sizeof(struct node_t)
+#define CHILDREN_ARRAY_SIZE NODE_SIZE * 4
+
  //Some constants and global variables
-int N = 100000;
 const double L = 1, W = 1, dt = 1e-3, alpha = 0.25, V = 50, epsilon = 1e-1, grav = 0.04; //grav should be 100/N
-double* x, * y, * u, * v, * force_x, * force_y, * mass;
+double x[N], y[N], u[N], v[N], force_x[N], force_y[N];
+double mass[N];
 struct node_t* root;
 char* file = "galaxy.in";
 
@@ -18,15 +22,7 @@ int read_case(char* filename) {
   int i;
   FILE* arq = fopen(filename, "r");
 
-  // Initiate memory for the vectors
-  x = (double*)malloc(N * sizeof(double));
-  y = (double*)malloc(N * sizeof(double));
-  u = (double*)malloc(N * sizeof(double));
-  v = (double*)malloc(N * sizeof(double));
-  force_x = (double*)malloc(N * sizeof(double));
-  force_y = (double*)malloc(N * sizeof(double));
-  mass = (double*)malloc(N * sizeof(double));
-
+  #pragma omp parallel for private(i)
   for (i = 0; i < N; i++) {
     fscanf(arq, "%lf %lf %lf %lf %lf", &mass[i], &x[i], &y[i], &u[i], &v[i]);
   }
@@ -36,24 +32,10 @@ int read_case(char* filename) {
 }
 
 /*
- * Function to free a case
- */
-void free_case() {
-  free(x);
-  free(y);
-  free(u);
-  free(v);
-  free(force_x);
-  free(force_y);
-  free(mass);
-}
-
-/*
  * Prints statistics: time, N, final velocity, final center of mass
  */
 void print_statistics(double s, double e, float ut, float vt, float xc, float xy) {
   printf("Time elapsed in seconds: %f\n", e - s);
-  printf("%d\n", N);
   printf("%.5f %.5f\n", ut, vt);
   printf("%.5f %.5f\n", xc, xy);
 }
@@ -63,7 +45,7 @@ void print_statistics(double s, double e, float ut, float vt, float xc, float xy
  */
 void time_step(void) {
   //Allocate memory for root
-  root = malloc(sizeof(struct node_t));
+  root = malloc(NODE_SIZE);
 
   set_node(root);
 
@@ -144,80 +126,80 @@ void put_particle_in_tree(int new_particle, struct node_t* node) {
     return;
   }
 
+  double half_current_x = (node->min_x + node->max_x) / 2;
+  double half_current_y = (node->min_y + node->max_y) / 2;
+
   //If the node has no children
   if (!node->has_children) {
     //Allocate and initiate children
-    node->children = malloc(4 * sizeof(struct node_t));
+    node->children = malloc(CHILDREN_ARRAY_SIZE);
+    struct node_t* children_0_add = &node->children[0];
+    struct node_t* children_1_add = children_0_add + 1;
+    struct node_t* children_2_add = children_0_add + 2;
+    struct node_t* children_3_add = children_0_add + 3;
 
-    set_node(&node->children[0]);
-    set_node(&node->children[1]);
-    set_node(&node->children[2]);
-    set_node(&node->children[3]);
-
-    double half_current_x = (node->min_x + node->max_x) / 2;
-    double half_current_y = (node->min_y + node->max_y) / 2;
+    set_node(children_0_add);
+    set_node(children_1_add);
+    set_node(children_2_add);
+    set_node(children_3_add);
 
     //Set boundaries for the children
-    node->children[0].min_x = node->min_x;
-    node->children[0].max_x = half_current_x;
-    node->children[0].min_y = node->min_y;
-    node->children[0].max_y = half_current_y;
+    children_0_add->min_x = node->min_x;
+    children_0_add->max_x = half_current_x;
+    children_0_add->min_y = node->min_y;
+    children_0_add->max_y = half_current_y;
 
-    node->children[1].min_x = half_current_x;
-    node->children[1].max_x = node->max_x;
-    node->children[1].min_y = node->min_y;
-    node->children[1].max_y = half_current_y;
+    children_1_add->min_x = half_current_x;
+    children_1_add->max_x = node->max_x;
+    children_1_add->min_y = node->min_y;
+    children_1_add->max_y = half_current_y;
 
-    node->children[2].min_x = node->min_x;
-    node->children[2].max_x = half_current_x;
-    node->children[2].min_y = half_current_y;
-    node->children[2].max_y = node->max_y;
+    children_2_add->min_x = node->min_x;
+    children_2_add->max_x = half_current_x;
+    children_2_add->min_y = half_current_y;
+    children_2_add->max_y = node->max_y;
 
-    node->children[3].min_x = half_current_x;
-    node->children[3].max_x = node->max_x;
-    node->children[3].min_y = half_current_y;
-    node->children[3].max_y = node->max_y;
+    children_3_add->min_x = half_current_x;
+    children_3_add->max_x = node->max_x;
+    children_3_add->min_y = half_current_y;
+    children_3_add->max_y = node->max_y;
 
     //Put old particle into the appropriate child
-    place_particle(node->particle, node);
-
-    //Put new particle into the appropriate child
-    place_particle(new_particle, node);
+    place_particle(node->particle, node, half_current_x, half_current_y);
 
     //It now has children
     node->has_children = 1;
-    return;
   }
 
   //Add the new particle to the appropriate children
   //Put new particle into the appropriate child
-  place_particle(new_particle, node);
+  place_particle(new_particle, node, half_current_x, half_current_y);
 }
 
 
 /*
  * Puts a particle in the right child of a node with children.
  */
-void place_particle(int particle, struct node_t* node) {
-  double half_current_x = (node->min_x + node->max_x) / 2;
-  double half_current_y = (node->min_y + node->max_y) / 2;
+void place_particle(int particle, struct node_t* node, double half_current_x, double half_current_y) {
+  double particle_x = x[particle];
+  double particle_y = y[particle];
 
-  if (x[particle] <= half_current_x && y[particle] <= half_current_y) {
+  if (particle_x <= half_current_x && particle_y <= half_current_y) {
     put_particle_in_tree(particle, &node->children[0]);
     return;
   }
 
-  if (x[particle] > half_current_x && y[particle] < half_current_y) {
-    put_particle_in_tree(particle, &node->children[1]);
+  if (particle_x >= half_current_x && particle_y >= half_current_y) {
+    put_particle_in_tree(particle, &node->children[3]);
     return;
   }
 
-  if (x[particle] < half_current_x && y[particle] > half_current_y) {
+  if (particle_x < half_current_x && particle_y > half_current_y) {
     put_particle_in_tree(particle, &node->children[2]);
     return;
   }
 
-  put_particle_in_tree(particle, &node->children[3]);
+  put_particle_in_tree(particle, &node->children[1]);
 }
 
 /*
@@ -276,14 +258,30 @@ double calculate_center_of_mass_x(struct node_t* node) {
   else {
     node->c_x = 0;
     double m_tot = 0;
-    for (int i = 0; i < 4; i++) {
-      if (node->children[i].has_particle) {
-        node->c_x += node->children[i].total_mass * calculate_center_of_mass_x(&node->children[i]);
-        m_tot += node->children[i].total_mass;
-      }
+
+    if (node->children[0].has_particle) {
+      node->c_x += node->children[0].total_mass * calculate_center_of_mass_x(&node->children[0]);
+      m_tot += node->children[0].total_mass;
     }
+
+    if (node->children[1].has_particle) {
+      node->c_x += node->children[1].total_mass * calculate_center_of_mass_x(&node->children[1]);
+      m_tot += node->children[1].total_mass;
+    }
+
+    if (node->children[2].has_particle) {
+      node->c_x += node->children[2].total_mass * calculate_center_of_mass_x(&node->children[2]);
+      m_tot += node->children[2].total_mass;
+    }
+
+    if (node->children[3].has_particle) {
+      node->c_x += node->children[3].total_mass * calculate_center_of_mass_x(&node->children[3]);
+      m_tot += node->children[3].total_mass;
+    }
+
     node->c_x /= m_tot;
   }
+
   return node->c_x;
 }
 
@@ -299,12 +297,27 @@ double calculate_center_of_mass_y(struct node_t* node) {
   else {
     node->c_y = 0;
     double m_tot = 0;
-    for (int i = 0; i < 4; i++) {
-      if (node->children[i].has_particle) {
-        node->c_y += node->children[i].total_mass * calculate_center_of_mass_y(&node->children[i]);
-        m_tot += node->children[i].total_mass;
-      }
+
+    if (node->children[0].has_particle) {
+      node->c_y += node->children[0].total_mass * calculate_center_of_mass_y(&node->children[0]);
+      m_tot += node->children[0].total_mass;
     }
+
+    if (node->children[1].has_particle) {
+      node->c_y += node->children[1].total_mass * calculate_center_of_mass_y(&node->children[1]);
+      m_tot += node->children[1].total_mass;
+    }
+
+    if (node->children[2].has_particle) {
+      node->c_y += node->children[2].total_mass * calculate_center_of_mass_y(&node->children[2]);
+      m_tot += node->children[2].total_mass;
+    }
+
+    if (node->children[3].has_particle) {
+      node->c_y += node->children[3].total_mass * calculate_center_of_mass_y(&node->children[3]);
+      m_tot += node->children[3].total_mass;
+    }
+
     node->c_y /= m_tot;
   }
   return node->c_y;
@@ -316,7 +329,7 @@ double calculate_center_of_mass_y(struct node_t* node) {
 */
 void update_forces() {
   int i;
-  #pragma omp parallel for private(i)
+  #pragma omp parallel for private(i) schedule(guided)
   for (i = 0; i < N; i++) {
     force_x[i] = 0;
     force_y[i] = 0;
@@ -331,7 +344,9 @@ void update_forces() {
 void update_forces_help(int particle, struct node_t* node) {
   //The node is a leaf node with a particle and not the particle itself
   if (node->has_children) {
-    double r = sqrt((x[particle] - node->c_x) * (x[particle] - node->c_x) + (y[particle] - node->c_y) * (y[particle] - node->c_y));
+    double aux = x[particle] - node->c_x;
+    double temp = y[particle] - node->c_y;
+    double r = sqrt(aux * aux + temp * temp);
 
     /* If the distance to the node's centre of mass is far enough, calculate the force,
      * otherwise traverse further down the tree
@@ -347,11 +362,12 @@ void update_forces_help(int particle, struct node_t* node) {
     update_forces_help(particle, &node->children[3]);
   }
   //The node has children
-  else if (node->has_particle && node->particle != particle) {
+  else if (node->particle != particle && node->has_particle) {
     //Calculate r 
-    double r = sqrt((x[particle] - node->c_x) * (x[particle] - node->c_x) + (y[particle] - node->c_y) * (y[particle] - node->c_y));
+    double aux = x[particle] - node->c_x;
+    double temp = y[particle] - node->c_y;
+    double r = sqrt(aux * aux + temp * temp);
     calculate_force(particle, node, r);
-
   }
 }
 
@@ -393,7 +409,7 @@ int main(int argc, char* argv[]) {
   double total_mass = 0;
   int i;
 
-  #pragma omp parallel for private(i) reduction(+:sumx,sumy,vu,vv,total_mass) num_threads(2)
+  #pragma omp parallel for private(i) reduction(+:sumx,sumy,vu,vv,total_mass)
   for (i = 0; i < N; i++) {
     sumx += mass[i] * x[i];
     sumy += mass[i] * y[i];
@@ -406,9 +422,6 @@ int main(int argc, char* argv[]) {
   double cy = sumy / total_mass;
 
   print_statistics(start, stop, vu, vv, cx, cy);
-
-  //Free memory
-  free_case();
 
   return 0;
 }

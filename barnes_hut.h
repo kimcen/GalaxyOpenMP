@@ -38,7 +38,7 @@ void bounce(double* x, double* y, double* u, double* v);
 
 //Functions for handling the placement of particles in the tree
 void put_particle_in_tree(int new_particle, struct node_t* node);
-void place_particle(int particle, struct node_t* node);
+void place_particle(int particle, struct node_t* node, double half_current_x, double half_current_y);
 void set_node(struct node_t* node);
 void free_node(struct node_t* node);
 void display_tree(struct node_t* node);
