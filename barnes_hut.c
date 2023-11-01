@@ -14,8 +14,7 @@ char* file = "galaxy.in";
 /*
  * Function to read a case
  */
-int read_case(char* filename)
-{
+int read_case(char* filename) {
   int i, n;
   FILE* arq = NULL;
 
@@ -39,18 +38,10 @@ int read_case(char* filename)
   force_x = (double*)calloc(N, sizeof(double));
   force_y = (double*)calloc(N, sizeof(double));
   mass = (double*)malloc(N * sizeof(double));
-  if (x == NULL || y == NULL ||
-    u == NULL || v == NULL ||
-    force_x == NULL || force_y == NULL ||
-    mass == NULL) {
-    printf("Error: some malloc won't work.\n");
-    fclose(arq);
-    return 1;
-  }
 
   for (i = 0; i < N; i++) {
-    n = fscanf(arq, "%lf %lf %lf %lf %lf",
-      &mass[i], &x[i], &y[i], &u[i], &v[i]);
+    n = fscanf(arq, "%lf %lf %lf %lf %lf", &mass[i], &x[i], &y[i], &u[i], &v[i]);
+
     if (n != 5) {
       printf("Error: Some reading won't work at line %d (%d)\n", i + 1, n);
       fclose(arq);
@@ -65,8 +56,7 @@ int read_case(char* filename)
 /*
  * Function to free a case
  */
-void free_case()
-{
+void free_case() {
   free(x);
   free(y);
   free(u);
@@ -79,10 +69,7 @@ void free_case()
 /*
  * Prints statistics: time, N, final velocity, final center of mass
  */
-void print_statistics(clock_t s, clock_t e,
-  float ut, float vt,
-  float xc, float xy)
-{
+void print_statistics(clock_t s, clock_t e, float ut, float vt, float xc, float xy) {
   #ifdef DEBUG
   printf("%f\n", (double)(e - s) / CLOCKS_PER_SEC);
   printf("%d\n", N);
@@ -371,7 +358,7 @@ void calculate_force(int particle, struct node_t* node, double r) {
  */
 int main(int argc, char* argv[]) {
   //The second argument sets the number of time steps
-  int time_steps = 1;
+  int time_steps = atoi(argv[1]);
 
   int test = read_case(file);
   if (test == 1) {
